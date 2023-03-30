@@ -13,6 +13,7 @@
 #include <time.h>
 #include <errno.h>
 #include <assert.h>
+#include <ctype.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include "../diskimg/DiskImg.h"
@@ -21,6 +22,9 @@ using namespace DiskImgLib;
 
 #define nil NULL
 #define NELEM(x) (sizeof(x) / sizeof((x)[0]))
+
+#define HexDigit(x) ( !isxdigit((int)(x)) ? -1 : \
+            (x) <= '9' ? (x) - '0' : toupper(x) +10 - 'A' )
 
 /*
  * Globals.
@@ -114,18 +118,34 @@ CopyFiles(DiskFS* pDiskFS, int argc, char** argv)
             continue;
         }
 
-        printf("+++ Adding '%s'\n", *argv);
-
         /*
          * Use external pathname as internal pathname.  This isn't quite
          * right, since things like "../" will end up getting converted
          * to something we don't want, but it'll do for now.
          */
         parms.pathName = *argv;
+        char *path = (char *)malloc(strlen(*argv)+1);
+        strcpy(path, *argv);
+        char *typestr;
+        int type = 0x00; // NON
+        int aux = 0x0000; // $0000
+        if ((typestr = strchr(path, '#')) != NULL) {
+            path[typestr-path] = '\0'; typestr++;
+            parms.pathName = path;
+            type = HexDigit(*typestr) << 4; typestr++;
+            type |= HexDigit(*typestr);
+            typestr++;
+            aux |= HexDigit(*typestr) << 12; typestr++;
+            aux |= HexDigit(*typestr) << 8; typestr++;
+            aux |= HexDigit(*typestr) << 4; typestr++;
+            aux |= HexDigit(*typestr);
+            printf("+++ Type and auxType : %s 0x%02x 0x%04x\n", typestr, type, aux);
+        }
+        printf("+++ Adding '%s'\n", parms.pathName);
         parms.fssep = '/';      // UNIX fssep
         parms.storageType = DiskFS::kStorageSeedling;   // not forked, not dir
-        parms.fileType = 0;     // NON
-        parms.auxType = 0;      // $0000
+        parms.fileType = type;
+        parms.auxType = aux;
         parms.access = DiskFS::kFileAccessUnlocked;
         parms.createWhen = time(nil);
         parms.modWhen = time(nil);
